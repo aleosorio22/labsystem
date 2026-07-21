@@ -1,0 +1,36 @@
+/*
+ * Tema del sistema: TODOS los colores y radios viven aquí.
+ * Para cambiar la apariencia completa basta con editar este archivo.
+ */
+:root {
+  /* Marca */
+  --t-color-primary: #0f766e;        /* verde azulado del laboratorio */
+  --t-color-primary-hover: #115e59;
+  --t-color-primary-soft: #f0fdfa;   /* fondo suave de la marca */
+  --t-color-primary-border: #99f6e4;
+
+  /* Superficies (tema claro) */
+  --t-color-bg: #f8fafc;
+  --t-color-surface: #ffffff;
+  --t-color-sidebar: #ffffff;
+  --t-color-border: #e2e8f0;
+
+  /* Texto */
+  --t-color-text: #0f172a;
+  --t-color-text-muted: #64748b;
+  --t-color-text-faint: #94a3b8;
+
+  /* Estados */
+  --t-color-success: #16a34a;
+  --t-color-success-soft: #f0fdf4;
+  --t-color-warning: #d97706;
+  --t-color-warning-soft: #fffbeb;
+  --t-color-danger: #dc2626;
+  --t-color-danger-soft: #fef2f2;
+  --t-color-info: #2563eb;
+  --t-color-info-soft: #eff6ff;
+
+  /* Formas */
+  --t-radius-base: 0.5rem;
+  --t-radius-lg: 0.75rem;
+}
