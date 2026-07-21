@@ -14,7 +14,7 @@ const router = Router();
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: config.env === 'development' ? 1000 : 20,
   message: { error: 'Demasiados intentos, intenta de nuevo más tarde' },
 });
 
@@ -34,6 +34,9 @@ router.post('/login', loginLimiter, validate(loginSchema), asyncHandler(async (r
     .first();
 
   if (!user || !compararPassword(password, user.password)) {
+    if (config.env === 'development') {
+      console.warn(`Login fallido: usuario="${usuario}" ${user ? '(existe, contraseña incorrecta)' : '(no existe)'}`);
+    }
     throw new AppError('Usuario o contraseña incorrectos', 401);
   }
   if (!user.active) throw new AppError('El usuario está desactivado', 403);
