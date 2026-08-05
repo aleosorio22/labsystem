@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs';
+const bcrypt = require('bcryptjs');
 
 /** Permisos por módulo: [código, nombre] */
 const PERMISOS = {
@@ -88,7 +88,7 @@ const ROLES = {
   },
 };
 
-export async function seed(knex) {
+async function seed(knex) {
   // Permisos (idempotente)
   const permisos = Object.entries(PERMISOS).flatMap(([modulo, lista]) =>
     lista.map(([codigo, nombre]) => ({ codigo, nombre, modulo })));
@@ -140,3 +140,5 @@ export async function seed(knex) {
     });
   }
 }
+
+module.exports = { seed };

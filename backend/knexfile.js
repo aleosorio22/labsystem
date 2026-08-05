@@ -1,6 +1,6 @@
-import 'dotenv/config';
+require('dotenv').config();
 
-export default {
+module.exports = {
   client: 'mysql2',
   connection: {
     host: process.env.DB_HOST || '127.0.0.1',

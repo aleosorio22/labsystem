@@ -6,9 +6,9 @@
  * Uso:  npm run etl:legacy
  * (configura LEGACY_DB_NAME en .env; el usuario de BD necesita SELECT ahí)
  */
-import 'dotenv/config';
-import knexFactory from 'knex';
-import knexConfig from '../knexfile.js';
+require('dotenv').config();
+const knexFactory = require('knex');
+const knexConfig = require('../knexfile.js');
 
 const destino = knexFactory(knexConfig);
 const legado = knexFactory({

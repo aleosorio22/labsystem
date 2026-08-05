@@ -1,20 +1,26 @@
-import { db } from '../db/knex.js';
+const db = require('./config/database');
 
 /**
  * Registra una entrada en bitácora. No lanza: la auditoría nunca debe
  * romper la operación principal.
  */
-export async function audit({ userId, accion, tabla, registroId, anterior, nuevo }) {
+async function audit({ userId, accion, tabla, registroId, anterior, nuevo }) {
   try {
-    await db('bitacora').insert({
-      user_id: userId ?? null,
-      accion,
-      nombre_tabla: tabla ?? null,
-      registro_id: registroId ?? null,
-      info_anterior: anterior ? JSON.stringify(anterior) : null,
-      info_nueva: nuevo ? JSON.stringify(nuevo) : null,
-    });
+    await db.execute(
+      `INSERT INTO bitacora (user_id, accion, nombre_tabla, registro_id, info_anterior, info_nueva)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        userId ?? null,
+        accion,
+        tabla ?? null,
+        registroId ?? null,
+        anterior ? JSON.stringify(anterior) : null,
+        nuevo ? JSON.stringify(nuevo) : null,
+      ],
+    );
   } catch (err) {
     console.error('Error escribiendo bitácora:', err.message);
   }
 }
+
+module.exports = { audit };

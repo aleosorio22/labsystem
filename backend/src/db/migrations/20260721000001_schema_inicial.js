@@ -11,7 +11,7 @@ const commonDefaults = (table, knex) => {
   table.timestamp('updated_at').defaultTo(knex.fn.now());
 };
 
-export async function up(knex) {
+async function up(knex) {
   // ---------- RBAC ----------
   await knex.schema.createTable('roles', (t) => {
     t.increments('id');
@@ -282,7 +282,7 @@ export async function up(knex) {
   });
 }
 
-export async function down(knex) {
+async function down(knex) {
   const tables = [
     'archivos', 'bitacora',
     'resultado_orina', 'parametros_orinas', 'categoria_orinas',
@@ -296,3 +296,5 @@ export async function down(knex) {
   ];
   for (const t of tables) await knex.schema.dropTableIfExists(t);
 }
+
+module.exports = { up, down };
