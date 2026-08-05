@@ -3,32 +3,77 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, errorMsg } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import {
-  Button, Card, PageHeader, Input, Select, Textarea, IconButton, Spinner, Checkbox,
+  Button, Card, PageHeader, Input, Select, Textarea, Spinner, Checkbox,
 } from '../components/ui';
+import SelectBuscador from '../components/SelectBuscador';
+import PacienteNuevoModal from '../components/PacienteNuevoModal';
 import { icons } from '../config/icons';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const fmtQ = (n) => `Q ${Number(n || 0).toFixed(2)}`;
 
+/** Hook simple de debounce para búsquedas en servidor */
+function useDebounce(valor, ms = 250) {
+  const [deb, setDeb] = useState(valor);
+  useEffect(() => {
+    const t = setTimeout(() => setDeb(valor), ms);
+    return () => clearTimeout(t);
+  }, [valor, ms]);
+  return deb;
+}
+
+const itemPaciente = (p) => ({
+  id: p.id,
+  label: `${p.nombres} ${p.apellidos}`,
+  sub: [p.edad != null ? `${p.edad} años` : null, p.celular].filter(Boolean).join(' · '),
+});
+const itemMedico = (m) => ({ id: m.id, label: `${m.nombres} ${m.apellidos}` });
+
 /** Crear o editar una orden (cotización) */
 export default function OrdenForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { can } = useAuth();
   const editando = !!id;
 
-  const { data: pacientes } = useQuery({
-    queryKey: ['pacientes-select'],
-    queryFn: () => api.get('/pacientes', { params: { limit: 10000 } }).then((r) => r.data.data),
+  // --- Paciente: búsqueda en servidor + creación inline ---
+  const [pacienteSel, setPacienteSel] = useState(null);
+  const [busqPaciente, setBusqPaciente] = useState('');
+  const busqPacienteDeb = useDebounce(busqPaciente);
+  const [modalPaciente, setModalPaciente] = useState(false);
+  const [nombrePrellenado, setNombrePrellenado] = useState('');
+
+  const { data: pacientesEncontrados, isFetching: buscandoPacientes } = useQuery({
+    queryKey: ['pacientes-buscar', busqPacienteDeb],
+    queryFn: () => api.get('/pacientes', { params: { q: busqPacienteDeb, limit: 10 } })
+      .then((r) => r.data.data),
+    enabled: busqPacienteDeb.length >= 2,
   });
+
+  // --- Médicos: lista corta, filtro local ---
+  const [medicoSel, setMedicoSel] = useState(null);
+  const [medicoHijoSel, setMedicoHijoSel] = useState(null);
+  const [filtroMedico, setFiltroMedico] = useState('');
+  const [filtroMedicoHijo, setFiltroMedicoHijo] = useState('');
+
   const { data: medicos } = useQuery({
     queryKey: ['/medicos'],
     queryFn: () => api.get('/medicos').then((r) => r.data),
   });
+
+  const filtrarMedicos = (texto) => (medicos ?? [])
+    .filter((m) => `${m.nombres} ${m.apellidos}`.toLowerCase().includes(texto.toLowerCase()))
+    .slice(0, 20)
+    .map(itemMedico);
+
+  // --- Exámenes ---
   const { data: examenes } = useQuery({
     queryKey: ['examenes-vendibles'],
     queryFn: () => api.get('/examenes/vendibles').then((r) => r.data),
   });
+
   const { data: orden, isLoading: cargandoOrden } = useQuery({
     queryKey: ['orden', id],
     queryFn: () => api.get(`/ordenes/${id}`).then((r) => r.data),
@@ -36,8 +81,7 @@ export default function OrdenForm() {
   });
 
   const [form, setForm] = useState({
-    id_paciente: '', id_medico: '', fecha_cotizacion: hoy(),
-    observaciones: '', id_medico_hijo: '', comision_medico_hijo: 0, coniva: true,
+    fecha_cotizacion: hoy(), observaciones: '', comision_medico_hijo: 0, coniva: true,
   });
   const [items, setItems] = useState([]);
   const [filtroExamen, setFiltroExamen] = useState('');
@@ -45,14 +89,14 @@ export default function OrdenForm() {
   useEffect(() => {
     if (!orden) return;
     setForm({
-      id_paciente: orden.id_paciente,
-      id_medico: orden.id_medico,
       fecha_cotizacion: String(orden.fecha_cotizacion).slice(0, 10),
       observaciones: orden.observaciones ?? '',
-      id_medico_hijo: orden.id_medico_hijo ?? '',
       comision_medico_hijo: Number(orden.comision_medico_hijo) || 0,
       coniva: true,
     });
+    setPacienteSel({ id: orden.id_paciente, label: orden.paciente, sub: `${orden.edad_paciente} años` });
+    setMedicoSel({ id: orden.id_medico, label: orden.medico });
+    setMedicoHijoSel(orden.id_medico_hijo ? { id: orden.id_medico_hijo, label: orden.medico_hijo } : null);
     setItems(orden.detalles.map((d) => ({
       id_examen: d.id_examen, nombre: d.examen, codigo: d.codigo,
       precio: Number(d.precio), descuento: Number(d.descuento) || 0,
@@ -97,10 +141,14 @@ export default function OrdenForm() {
 
   const onSubmit = (e) => {
     e.preventDefault();
+    if (!pacienteSel) return toast.warning('Selecciona el paciente');
+    if (!medicoSel) return toast.warning('Selecciona el médico');
     if (!items.length) return toast.warning('Agrega al menos un examen');
     guardar.mutate({
       ...form,
-      id_medico_hijo: form.id_medico_hijo || null,
+      id_paciente: pacienteSel.id,
+      id_medico: medicoSel.id,
+      id_medico_hijo: medicoHijoSel?.id ?? null,
       observaciones: form.observaciones || null,
       items: items.map(({ nombre, codigo, ...i }) => i),
     });
@@ -120,25 +168,38 @@ export default function OrdenForm() {
 
       <form onSubmit={onSubmit} className="space-y-5">
         <Card className="p-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Select label="Paciente" value={form.id_paciente} onChange={set('id_paciente')} required>
-            <option value="">— Seleccionar paciente —</option>
-            {(pacientes ?? []).map((p) => (
-              <option key={p.id} value={p.id}>{p.nombres} {p.apellidos}</option>
-            ))}
-          </Select>
-          <Select label="Médico" value={form.id_medico} onChange={set('id_medico')} required>
-            <option value="">— Seleccionar médico —</option>
-            {(medicos ?? []).map((m) => (
-              <option key={m.id} value={m.id}>{m.nombres} {m.apellidos}</option>
-            ))}
-          </Select>
+          <SelectBuscador
+            label="Paciente"
+            required
+            placeholder="Buscar por nombre, DPI o celular…"
+            valor={pacienteSel}
+            onSelect={setPacienteSel}
+            opciones={(pacientesEncontrados ?? []).map(itemPaciente)}
+            onBuscar={setBusqPaciente}
+            cargando={buscandoPacientes}
+            accionExtra={can('pacientes.crear') ? {
+              label: 'Crear paciente nuevo',
+              onClick: (texto) => { setNombrePrellenado(texto); setModalPaciente(true); },
+            } : undefined}
+          />
+          <SelectBuscador
+            label="Médico"
+            required
+            placeholder="Buscar médico…"
+            valor={medicoSel}
+            onSelect={setMedicoSel}
+            opciones={filtrarMedicos(filtroMedico)}
+            onBuscar={setFiltroMedico}
+          />
           <Input label="Fecha" type="date" value={form.fecha_cotizacion} onChange={set('fecha_cotizacion')} required />
-          <Select label="Médico referente secundario (opcional)" value={form.id_medico_hijo} onChange={set('id_medico_hijo')}>
-            <option value="">— Ninguno —</option>
-            {(medicos ?? []).map((m) => (
-              <option key={m.id} value={m.id}>{m.nombres} {m.apellidos}</option>
-            ))}
-          </Select>
+          <SelectBuscador
+            label="Médico referente secundario (opcional)"
+            placeholder="Buscar médico…"
+            valor={medicoHijoSel}
+            onSelect={setMedicoHijoSel}
+            opciones={filtrarMedicos(filtroMedicoHijo)}
+            onBuscar={setFiltroMedicoHijo}
+          />
           <Select label="% comisión secundario" value={form.comision_medico_hijo} onChange={set('comision_medico_hijo')}>
             <option value={0}>0%</option>
             {[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((p) => (
@@ -245,6 +306,16 @@ export default function OrdenForm() {
           </Button>
         </div>
       </form>
+
+      <PacienteNuevoModal
+        abierto={modalPaciente}
+        onCerrar={() => setModalPaciente(false)}
+        nombreInicial={nombrePrellenado}
+        onCreado={(p) => {
+          setModalPaciente(false);
+          setPacienteSel(itemPaciente(p));
+        }}
+      />
     </>
   );
 }
