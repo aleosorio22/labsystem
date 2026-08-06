@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './lib/auth';
+import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import { Spinner } from './components/ui';
 

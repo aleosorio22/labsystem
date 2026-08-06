@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { api } from '../lib/api';
 import { Card, PageHeader, Input, Spinner, Table } from '../components/ui';
+import { useFetch } from '../hooks/useFetch';
+import reporteService from '../services/reporteService';
 
 const primeroDeMes = () => {
   const d = new Date();
@@ -22,10 +22,10 @@ export default function Reportes() {
   const [desde, setDesde] = useState(primeroDeMes());
   const [hasta, setHasta] = useState(hoy());
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['reporte', tab, desde, hasta],
-    queryFn: () => api.get(`/reportes/${tab}`, { params: { desde, hasta } }).then((r) => r.data),
-  });
+  const { data, cargando } = useFetch(
+    () => reporteService.getPorTipo(tab, desde, hasta),
+    [tab, desde, hasta],
+  );
 
   return (
     <>
@@ -59,7 +59,7 @@ export default function Reportes() {
           )}
         </div>
 
-        {isLoading ? <Spinner /> : tab === 'ventas' ? (
+        {cargando ? <Spinner /> : tab === 'ventas' ? (
           <Table
             columnas={[
               { key: 'orden', label: 'Orden', className: 'text-text-faint' },

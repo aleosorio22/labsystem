@@ -1,18 +1,23 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import CrudPage from '../components/CrudPage';
+import { useFetch } from '../hooks/useFetch';
+import catalogoService from '../services/catalogoService';
+import pacienteService from '../services/pacienteService';
+
+const service = {
+  listar: (params) => pacienteService.getAll(params),
+  crear: (payload) => pacienteService.create(payload),
+  actualizar: (id, payload) => pacienteService.update(id, payload),
+  eliminar: (id) => pacienteService.eliminar(id),
+};
 
 export default function Pacientes() {
-  const { data: sexos } = useQuery({
-    queryKey: ['/catalogos/sexos'],
-    queryFn: () => api.get('/catalogos/sexos').then((r) => r.data),
-  });
+  const { data: sexos } = useFetch(() => catalogoService.getAll('sexos'), []);
 
   return (
     <CrudPage
       titulo="Pacientes"
       descripcion="Registro de pacientes del laboratorio"
-      endpoint="/pacientes"
+      service={service}
       permisoBase="pacientes"
       paginado
       columnas={[

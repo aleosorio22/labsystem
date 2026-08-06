@@ -1,29 +1,28 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import CrudPage from '../components/CrudPage';
 import { Badge } from '../components/ui';
+import { useFetch } from '../hooks/useFetch';
+import catalogoService from '../services/catalogoService';
+import examenService from '../services/examenService';
 
 const TIPO_COLOR = { 1: 'info', 2: 'warning', 3: 'neutral', 4: 'success', 5: 'success', 6: 'neutral' };
 
+const service = {
+  listar: (params) => examenService.getAll(params),
+  crear: (payload) => examenService.create(payload),
+  actualizar: (id, payload) => examenService.update(id, payload),
+  eliminar: (id) => examenService.eliminar(id),
+};
+
 export default function Examenes() {
-  const { data: categorias } = useQuery({
-    queryKey: ['/catalogos/categorias-examen'],
-    queryFn: () => api.get('/catalogos/categorias-examen').then((r) => r.data),
-  });
-  const { data: unidades } = useQuery({
-    queryKey: ['/catalogos/unidades-medida'],
-    queryFn: () => api.get('/catalogos/unidades-medida').then((r) => r.data),
-  });
-  const { data: tipos } = useQuery({
-    queryKey: ['/catalogos/tipos-examen'],
-    queryFn: () => api.get('/catalogos/tipos-examen').then((r) => r.data),
-  });
+  const { data: categorias } = useFetch(() => catalogoService.getAll('categorias-examen'), []);
+  const { data: unidades } = useFetch(() => catalogoService.getAll('unidades-medida'), []);
+  const { data: tipos } = useFetch(() => catalogoService.getTiposExamen(), []);
 
   return (
     <CrudPage
       titulo="Exámenes"
       descripcion="Catálogo de exámenes, precios y valores de referencia"
-      endpoint="/examenes"
+      service={service}
       permisoBase="examenes"
       columnas={[
         { key: 'codigo', label: 'Código', className: 'text-text-faint' },

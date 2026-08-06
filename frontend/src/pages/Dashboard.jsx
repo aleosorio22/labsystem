@@ -1,10 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { api } from '../lib/api';
 import { Card, PageHeader, Spinner, Badge } from '../components/ui';
 import { icons } from '../config/icons';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../context/AuthContext';
+import { useFetch } from '../hooks/useFetch';
+import reporteService from '../services/reporteService';
 
 const ESTADOS = {
   1: { label: 'Cotización', color: 'info' },
@@ -35,12 +35,9 @@ function Stat({ icon, label, valor, i }) {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const { data, isLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => api.get('/reportes/dashboard').then((r) => r.data),
-  });
+  const { data, cargando } = useFetch(() => reporteService.getDashboard(), []);
 
-  if (isLoading) return <Spinner />;
+  if (cargando || !data) return <Spinner />;
 
   const fmtQ = (n) => `Q ${Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2 })}`;
 

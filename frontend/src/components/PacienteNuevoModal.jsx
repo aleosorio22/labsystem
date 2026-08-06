@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, errorMsg } from '../lib/api';
+import { errorMsg, erroresPorCampo } from '../services/api';
+import { useFetch } from '../hooks/useFetch';
+import catalogoService from '../services/catalogoService';
+import pacienteService from '../services/pacienteService';
 import { Button, Input, Modal, Select } from './ui';
 
 const VACIO = {
@@ -14,15 +16,15 @@ const VACIO = {
  * (p.ej. desde el formulario de una orden). Llama onCreado(paciente).
  */
 export default function PacienteNuevoModal({ abierto, onCerrar, onCreado, nombreInicial = '' }) {
-  const qc = useQueryClient();
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
+  const [guardando, setGuardando] = useState(false);
 
-  const { data: sexos } = useQuery({
-    queryKey: ['/catalogos/sexos'],
-    queryFn: () => api.get('/catalogos/sexos').then((r) => r.data),
-    enabled: abierto,
-  });
+  const { data: sexos } = useFetch(
+    () => catalogoService.getAll('sexos'),
+    [abierto],
+    { activo: abierto },
+  );
 
   useEffect(() => {
     if (abierto) {
@@ -31,30 +33,27 @@ export default function PacienteNuevoModal({ abierto, onCerrar, onCreado, nombre
     }
   }, [abierto, nombreInicial]);
 
-  const crear = useMutation({
-    mutationFn: () => api.post('/pacientes', {
-      ...form,
-      mail: form.mail || null,
-    }).then((r) => r.data),
-    onSuccess: (paciente) => {
+  const crear = async (e) => {
+    e.preventDefault();
+    setErrores({});
+    setGuardando(true);
+    try {
+      const paciente = await pacienteService.create({ ...form, mail: form.mail || null });
       toast.success('Paciente creado');
-      qc.invalidateQueries({ queryKey: ['/pacientes'] });
       onCreado(paciente);
-    },
-    onError: (err) => {
-      const detalles = err.response?.data?.details;
-      if (detalles?.length) {
-        setErrores(Object.fromEntries(detalles.map((d) => [d.campo, d.mensaje])));
-      }
+    } catch (err) {
+      setErrores(erroresPorCampo(err));
       toast.error(errorMsg(err));
-    },
-  });
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   const set = (campo) => (e) => setForm((f) => ({ ...f, [campo]: e.target.value }));
 
   return (
     <Modal abierto={abierto} onCerrar={onCerrar} titulo="Nuevo paciente" ancho="max-w-2xl">
-      <form onSubmit={(e) => { e.preventDefault(); crear.mutate(); }}>
+      <form onSubmit={crear}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input label="Nombres" value={form.nombres} onChange={set('nombres')} error={errores.nombres} autoFocus required />
           <Input label="Apellidos" value={form.apellidos} onChange={set('apellidos')} error={errores.apellidos} required />
@@ -73,7 +72,7 @@ export default function PacienteNuevoModal({ abierto, onCerrar, onCreado, nombre
         </div>
         <div className="flex justify-end gap-2 mt-6">
           <Button type="button" variant="secondary" onClick={onCerrar}>Cancelar</Button>
-          <Button type="submit" icon="confirmar" loading={crear.isPending}>Crear paciente</Button>
+          <Button type="submit" icon="confirmar" loading={guardando}>Crear paciente</Button>
         </div>
       </form>
     </Modal>

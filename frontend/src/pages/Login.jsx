@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAuth } from '../lib/auth';
-import { errorMsg } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { errorMsg } from '../services/api';
 import { Button, Input } from '../components/ui';
 import { icons } from '../config/icons';
 

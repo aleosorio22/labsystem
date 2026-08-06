@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, errorMsg, abrirPdf } from '../lib/api';
 import { Button, Card, PageHeader, Spinner, Select, Badge } from '../components/ui';
+import { useFetch } from '../hooks/useFetch';
+import { errorMsg } from '../services/api';
+import ordenService from '../services/ordenService';
+import catalogoService from '../services/catalogoService';
 
 /**
  * Captura de resultados de un análisis en proceso.
@@ -13,32 +15,18 @@ import { Button, Card, PageHeader, Spinner, Select, Badge } from '../components/
 export default function AnalisisCaptura() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const qc = useQueryClient();
 
-  const { data: orden, isLoading } = useQuery({
-    queryKey: ['orden', id],
-    queryFn: () => api.get(`/ordenes/${id}`).then((r) => r.data),
-  });
-  const { data: catHeces } = useQuery({
-    queryKey: ['/catalogos/categorias-heces'],
-    queryFn: () => api.get('/catalogos/categorias-heces').then((r) => r.data),
-  });
-  const { data: parHeces } = useQuery({
-    queryKey: ['/catalogos/parametros-heces'],
-    queryFn: () => api.get('/catalogos/parametros-heces').then((r) => r.data),
-  });
-  const { data: catOrina } = useQuery({
-    queryKey: ['/catalogos/categorias-orina'],
-    queryFn: () => api.get('/catalogos/categorias-orina').then((r) => r.data),
-  });
-  const { data: parOrina } = useQuery({
-    queryKey: ['/catalogos/parametros-orina'],
-    queryFn: () => api.get('/catalogos/parametros-orina').then((r) => r.data),
-  });
+  const { data: orden, cargando, recargar } = useFetch(() => ordenService.getById(id), [id]);
+  const { data: catHeces } = useFetch(() => catalogoService.getAll('categorias-heces'), []);
+  const { data: parHeces } = useFetch(() => catalogoService.getAll('parametros-heces'), []);
+  const { data: catOrina } = useFetch(() => catalogoService.getAll('categorias-orina'), []);
+  const { data: parOrina } = useFetch(() => catalogoService.getAll('parametros-orina'), []);
 
   const [resultados, setResultados] = useState({});   // id_detalle -> texto
   const [heces, setHeces] = useState({});             // id_categoria -> id_parametro
   const [orina, setOrina] = useState({});             // id_categoria -> id_parametro
+  const [guardando, setGuardando] = useState(false);
+  const [finalizando, setFinalizando] = useState(false);
 
   useEffect(() => {
     if (!orden) return;
@@ -55,48 +43,52 @@ export default function AnalisisCaptura() {
   const detallesCaptura = (orden?.detalles ?? [])
     .filter((d) => ![4, 5].includes(Number(d.tipo_examen)));
 
-  const guardar = useMutation({
-    mutationFn: async () => {
-      await api.post(`/ordenes/${id}/resultados`, {
-        resultados: Object.entries(resultados).map(([idDetalle, r]) => ({
-          id_detalle: +idDetalle, resultado: r,
-        })),
-      });
-      if (tieneHeces) {
-        await api.post(`/ordenes/${id}/resultados-heces`, {
-          filas: Object.entries(heces)
-            .filter(([, p]) => p)
-            .map(([cat, p]) => ({ id_categoria_heces: +cat, id_parametro_heces: +p })),
-        });
-      }
-      if (tieneOrina) {
-        await api.post(`/ordenes/${id}/resultados-orina`, {
-          filas: Object.entries(orina)
-            .filter(([, p]) => p)
-            .map(([cat, p]) => ({ id_categoria_orina: +cat, id_parametro_orina: +p })),
-        });
-      }
-    },
-    onSuccess: () => {
-      toast.success('Resultados guardados');
-      qc.invalidateQueries({ queryKey: ['orden', id] });
-    },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
+  /** Envía resultados normales + secciones de heces y orina si aplican */
+  const guardarTodo = async () => {
+    await ordenService.guardarResultados(id, Object.entries(resultados).map(([idDetalle, r]) => ({
+      id_detalle: Number(idDetalle), resultado: r,
+    })));
+    if (tieneHeces) {
+      await ordenService.guardarResultadosHeces(id, Object.entries(heces)
+        .filter(([, p]) => p)
+        .map(([cat, p]) => ({ id_categoria_heces: Number(cat), id_parametro_heces: Number(p) })));
+    }
+    if (tieneOrina) {
+      await ordenService.guardarResultadosOrina(id, Object.entries(orina)
+        .filter(([, p]) => p)
+        .map(([cat, p]) => ({ id_categoria_orina: Number(cat), id_parametro_orina: Number(p) })));
+    }
+  };
 
-  const finalizar = useMutation({
-    mutationFn: async () => {
-      await guardar.mutateAsync();
-      await api.post(`/ordenes/${id}/finalizar`);
-    },
-    onSuccess: () => {
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      await guardarTodo();
+      toast.success('Resultados guardados');
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const finalizar = async () => {
+    if (!window.confirm('¿Finalizar el análisis? Ya no podrá editarse sin reabrirlo.')) return;
+    setFinalizando(true);
+    try {
+      await guardarTodo();
+      await ordenService.finalizar(id);
       toast.success('Análisis finalizado');
       navigate('/finalizados');
-    },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setFinalizando(false);
+    }
+  };
 
-  if (isLoading || !orden) return <Spinner />;
+  if (cargando || !orden) return <Spinner />;
 
   const fueraDeRango = (d) => {
     if (Number(d.tipo_examen) !== 1) return false;
@@ -134,14 +126,13 @@ export default function AnalisisCaptura() {
         titulo={`Análisis #${orden.id} — ${orden.paciente}`}
         descripcion={`${orden.edad_paciente} años · Médico: ${orden.medico}`}
       >
-        <Button variant="secondary" icon="imprimir" onClick={() => abrirPdf(`/ordenes/${id}/pdf/resultados`)}>
+        <Button variant="secondary" icon="imprimir" onClick={() => ordenService.abrirPdfResultados(id)}>
           Vista previa
         </Button>
-        <Button variant="secondary" icon="confirmar" loading={guardar.isPending} onClick={() => guardar.mutate()}>
+        <Button variant="secondary" icon="confirmar" loading={guardando} onClick={guardar}>
           Guardar avance
         </Button>
-        <Button icon="finalizados" loading={finalizar.isPending}
-          onClick={() => window.confirm('¿Finalizar el análisis? Ya no podrá editarse sin reabrirlo.') && finalizar.mutate()}>
+        <Button icon="finalizados" loading={finalizando} onClick={finalizar}>
           Finalizar análisis
         </Button>
       </PageHeader>

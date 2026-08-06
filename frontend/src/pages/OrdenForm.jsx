@@ -1,28 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, errorMsg } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import {
   Button, Card, PageHeader, Input, Select, Textarea, Spinner, Checkbox,
 } from '../components/ui';
 import SelectBuscador from '../components/SelectBuscador';
 import PacienteNuevoModal from '../components/PacienteNuevoModal';
 import { icons } from '../config/icons';
+import { useAuth } from '../context/AuthContext';
+import { useFetch } from '../hooks/useFetch';
+import { useDebounce } from '../hooks/useDebounce';
+import { errorMsg } from '../services/api';
+import ordenService from '../services/ordenService';
+import pacienteService from '../services/pacienteService';
+import medicoService from '../services/medicoService';
+import examenService from '../services/examenService';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const fmtQ = (n) => `Q ${Number(n || 0).toFixed(2)}`;
-
-/** Hook simple de debounce para búsquedas en servidor */
-function useDebounce(valor, ms = 250) {
-  const [deb, setDeb] = useState(valor);
-  useEffect(() => {
-    const t = setTimeout(() => setDeb(valor), ms);
-    return () => clearTimeout(t);
-  }, [valor, ms]);
-  return deb;
-}
 
 const itemPaciente = (p) => ({
   id: p.id,
@@ -45,12 +40,11 @@ export default function OrdenForm() {
   const [modalPaciente, setModalPaciente] = useState(false);
   const [nombrePrellenado, setNombrePrellenado] = useState('');
 
-  const { data: pacientesEncontrados, isFetching: buscandoPacientes } = useQuery({
-    queryKey: ['pacientes-buscar', busqPacienteDeb],
-    queryFn: () => api.get('/pacientes', { params: { q: busqPacienteDeb, limit: 10 } })
-      .then((r) => r.data.data),
-    enabled: busqPacienteDeb.length >= 2,
-  });
+  const { data: pacientesEncontrados, cargando: buscandoPacientes } = useFetch(
+    () => pacienteService.buscar(busqPacienteDeb, 10),
+    [busqPacienteDeb],
+    { activo: busqPacienteDeb.length >= 2, inicial: [] },
+  );
 
   // --- Médicos: lista corta, filtro local ---
   const [medicoSel, setMedicoSel] = useState(null);
@@ -58,10 +52,7 @@ export default function OrdenForm() {
   const [filtroMedico, setFiltroMedico] = useState('');
   const [filtroMedicoHijo, setFiltroMedicoHijo] = useState('');
 
-  const { data: medicos } = useQuery({
-    queryKey: ['/medicos'],
-    queryFn: () => api.get('/medicos').then((r) => r.data),
-  });
+  const { data: medicos } = useFetch(() => medicoService.getAll(), []);
 
   const filtrarMedicos = (texto) => (medicos ?? [])
     .filter((m) => `${m.nombres} ${m.apellidos}`.toLowerCase().includes(texto.toLowerCase()))
@@ -69,22 +60,20 @@ export default function OrdenForm() {
     .map(itemMedico);
 
   // --- Exámenes ---
-  const { data: examenes } = useQuery({
-    queryKey: ['examenes-vendibles'],
-    queryFn: () => api.get('/examenes/vendibles').then((r) => r.data),
-  });
+  const { data: examenes } = useFetch(() => examenService.getVendibles(), []);
 
-  const { data: orden, isLoading: cargandoOrden } = useQuery({
-    queryKey: ['orden', id],
-    queryFn: () => api.get(`/ordenes/${id}`).then((r) => r.data),
-    enabled: editando,
-  });
+  const { data: orden, cargando: cargandoOrden } = useFetch(
+    () => ordenService.getById(id),
+    [id],
+    { activo: editando },
+  );
 
   const [form, setForm] = useState({
     fecha_cotizacion: hoy(), observaciones: '', comision_medico_hijo: 0, coniva: true,
   });
   const [items, setItems] = useState([]);
   const [filtroExamen, setFiltroExamen] = useState('');
+  const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
     if (!orden) return;
@@ -128,30 +117,32 @@ export default function OrdenForm() {
 
   const total = items.reduce((s, i) => s + Number(i.precio || 0), 0);
 
-  const guardar = useMutation({
-    mutationFn: (payload) => editando
-      ? api.put(`/ordenes/${id}`, payload)
-      : api.post('/ordenes', payload),
-    onSuccess: () => {
-      toast.success(editando ? 'Orden actualizada' : 'Orden creada');
-      navigate('/ordenes');
-    },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
-
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     if (!pacienteSel) return toast.warning('Selecciona el paciente');
     if (!medicoSel) return toast.warning('Selecciona el médico');
     if (!items.length) return toast.warning('Agrega al menos un examen');
-    guardar.mutate({
+
+    const payload = {
       ...form,
       id_paciente: pacienteSel.id,
       id_medico: medicoSel.id,
       id_medico_hijo: medicoHijoSel?.id ?? null,
       observaciones: form.observaciones || null,
       items: items.map(({ nombre, codigo, ...i }) => i),
-    });
+    };
+
+    setGuardando(true);
+    try {
+      if (editando) await ordenService.update(id, payload);
+      else await ordenService.create(payload);
+      toast.success(editando ? 'Orden actualizada' : 'Orden creada');
+      navigate('/ordenes');
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setGuardando(false);
+    }
   };
 
   if (editando && cargandoOrden) return <Spinner />;
@@ -301,7 +292,7 @@ export default function OrdenForm() {
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => navigate('/ordenes')}>Cancelar</Button>
-          <Button type="submit" icon="confirmar" loading={guardar.isPending}>
+          <Button type="submit" icon="confirmar" loading={guardando}>
             {editando ? 'Guardar cambios' : 'Crear orden'}
           </Button>
         </div>

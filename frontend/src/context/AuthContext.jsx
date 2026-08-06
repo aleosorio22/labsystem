@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api } from './api';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import authService from '../services/authService';
 
 const AuthContext = createContext(null);
 
@@ -7,20 +7,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [cargando, setCargando] = useState(true);
 
+  // Al montar: si hay token guardado, recupera la sesión
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) { setCargando(false); return; }
-    api.get('/auth/me')
-      .then((res) => setUser(res.data))
+    authService.me()
+      .then(setUser)
       .catch(() => localStorage.removeItem('token'))
       .finally(() => setCargando(false));
   }, []);
 
   const login = useCallback(async (usuario, password) => {
-    const { data } = await api.post('/auth/login', { usuario, password });
-    localStorage.setItem('token', data.token);
-    setUser(data.user);
-    return data.user;
+    const { token, user: datos } = await authService.login(usuario, password);
+    localStorage.setItem('token', token);
+    setUser(datos);
+    return datos;
   }, []);
 
   const logout = useCallback(() => {
@@ -28,6 +29,7 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  /** ¿El usuario tiene alguno de estos permisos? */
   const can = useCallback(
     (...permisos) => permisos.some((p) => user?.permisos?.includes(p)),
     [user],

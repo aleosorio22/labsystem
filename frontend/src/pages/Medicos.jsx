@@ -1,12 +1,20 @@
 import CrudPage from '../components/CrudPage';
 import { Badge } from '../components/ui';
+import medicoService from '../services/medicoService';
+
+const service = {
+  listar: (params) => medicoService.getAll(params),
+  crear: (payload) => medicoService.create(payload),
+  actualizar: (id, payload) => medicoService.update(id, payload),
+  eliminar: (id) => medicoService.eliminar(id),
+};
 
 export default function Medicos() {
   return (
     <CrudPage
       titulo="Médicos"
       descripcion="Médicos referentes y socios"
-      endpoint="/medicos"
+      service={service}
       permisoBase="medicos"
       columnas={[
         { key: 'id', label: 'No.', className: 'text-text-faint' },

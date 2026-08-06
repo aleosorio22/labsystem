@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import { Card, PageHeader, Spinner, Table, Paginacion, Badge } from '../components/ui';
+import { useFetch } from '../hooks/useFetch';
+import bitacoraService from '../services/bitacoraService';
 
 const COLOR_ACCION = {
   'Creación': 'success',
@@ -13,16 +13,16 @@ const COLOR_ACCION = {
 
 export default function Bitacora() {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useQuery({
-    queryKey: ['bitacora', page],
-    queryFn: () => api.get('/bitacora', { params: { page, limit: 25 } }).then((r) => r.data),
-  });
+  const { data, cargando } = useFetch(
+    () => bitacoraService.getAll({ page, limit: 25 }),
+    [page],
+  );
 
   return (
     <>
       <PageHeader titulo="Bitácora" descripcion="Registro de todas las acciones del sistema" />
       <Card>
-        {isLoading ? <Spinner /> : (
+        {cargando ? <Spinner /> : (
           <Table
             columnas={[
               { key: 'created_at', label: 'Fecha', className: 'whitespace-nowrap text-text-muted',

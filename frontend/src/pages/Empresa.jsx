@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, errorMsg } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import { Button, Card, PageHeader, Input, Spinner } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useFetch } from '../hooks/useFetch';
+import { errorMsg } from '../services/api';
+import empresaService from '../services/empresaService';
 
 const CAMPOS = [
   ['nombre_comercial', 'Nombre comercial'],
@@ -17,22 +18,26 @@ const CAMPOS = [
 
 export default function Empresa() {
   const { can } = useAuth();
-  const { data, isLoading } = useQuery({
-    queryKey: ['/empresa'],
-    queryFn: () => api.get('/empresa').then((r) => r.data),
-  });
+  const { data, cargando } = useFetch(() => empresaService.get(), []);
   const [form, setForm] = useState({});
+  const [guardando, setGuardando] = useState(false);
 
   useEffect(() => { if (data) setForm(data); }, [data]);
 
-  const guardar = useMutation({
-    mutationFn: () => api.put('/empresa', Object.fromEntries(
-      CAMPOS.map(([k]) => [k, form[k] ?? null]))),
-    onSuccess: () => toast.success('Datos de la empresa actualizados'),
-    onError: (err) => toast.error(errorMsg(err)),
-  });
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    try {
+      await empresaService.update(Object.fromEntries(CAMPOS.map(([k]) => [k, form[k] ?? null])));
+      toast.success('Datos de la empresa actualizados');
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setGuardando(false);
+    }
+  };
 
-  if (isLoading) return <Spinner />;
+  if (cargando) return <Spinner />;
 
   return (
     <>
@@ -41,7 +46,7 @@ export default function Empresa() {
         descripcion="Datos que aparecen en cotizaciones y resultados impresos"
       />
       <Card className="p-5 max-w-2xl">
-        <form onSubmit={(e) => { e.preventDefault(); guardar.mutate(); }}>
+        <form onSubmit={guardar}>
           <div className="grid gap-4 sm:grid-cols-2">
             {CAMPOS.map(([campo, label]) => (
               <Input
@@ -56,7 +61,7 @@ export default function Empresa() {
           </div>
           {can('empresa.editar') && (
             <div className="flex justify-end mt-6">
-              <Button type="submit" icon="confirmar" loading={guardar.isPending}>Guardar</Button>
+              <Button type="submit" icon="confirmar" loading={guardando}>Guardar</Button>
             </div>
           )}
         </form>

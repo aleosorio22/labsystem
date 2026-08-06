@@ -1,26 +1,21 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, errorMsg } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import {
   Button, IconButton, Card, PageHeader, Modal, Input, Checkbox, Spinner, Badge,
 } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useFetch } from '../hooks/useFetch';
+import { errorMsg } from '../services/api';
+import rolService from '../services/rolService';
 
 export default function Roles() {
   const { can } = useAuth();
-  const qc = useQueryClient();
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ nombre: '', descripcion: '', permisos: [] });
+  const [guardando, setGuardando] = useState(false);
 
-  const { data: roles, isLoading } = useQuery({
-    queryKey: ['/roles'],
-    queryFn: () => api.get('/roles').then((r) => r.data),
-  });
-  const { data: permisos } = useQuery({
-    queryKey: ['/roles/permisos'],
-    queryFn: () => api.get('/roles/permisos').then((r) => r.data),
-  });
+  const { data: roles, cargando, recargar } = useFetch(() => rolService.getAll(), []);
+  const { data: permisos } = useFetch(() => rolService.getPermisos(), []);
 
   const porModulo = useMemo(() => {
     const grupos = {};
@@ -28,31 +23,38 @@ export default function Roles() {
     return grupos;
   }, [permisos]);
 
-  const invalidar = () => qc.invalidateQueries({ queryKey: ['/roles'] });
-
-  const guardar = useMutation({
-    mutationFn: () => modal?.id
-      ? api.put(`/roles/${modal.id}`, form)
-      : api.post('/roles', form),
-    onSuccess: () => {
-      toast.success('Rol guardado');
-      setModal(null);
-      invalidar();
-    },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
-
-  const eliminar = useMutation({
-    mutationFn: (id) => api.delete(`/roles/${id}`),
-    onSuccess: () => { toast.success('Rol eliminado'); invalidar(); },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
-
   const abrir = (rol) => {
     setForm(rol
       ? { nombre: rol.nombre, descripcion: rol.descripcion ?? '', permisos: [...rol.permisos] }
       : { nombre: '', descripcion: '', permisos: [] });
     setModal(rol ?? {});
+  };
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    try {
+      if (modal?.id) await rolService.update(modal.id, form);
+      else await rolService.create(form);
+      toast.success('Rol guardado');
+      setModal(null);
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const eliminar = async (rol) => {
+    if (!window.confirm(`¿Eliminar el rol ${rol.nombre}?`)) return;
+    try {
+      await rolService.eliminar(rol.id);
+      toast.success('Rol eliminado');
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    }
   };
 
   const togglePermiso = (id) => setForm((f) => ({
@@ -62,7 +64,7 @@ export default function Roles() {
       : [...f.permisos, id],
   }));
 
-  if (isLoading) return <Spinner />;
+  if (cargando) return <Spinner />;
 
   return (
     <>
@@ -83,8 +85,7 @@ export default function Roles() {
               {can('roles.editar') && rol.nombre !== 'super-admin' && (
                 <div className="flex gap-1 shrink-0">
                   <IconButton icon="editar" title="Editar" onClick={() => abrir(rol)} />
-                  <IconButton icon="eliminar" title="Eliminar" danger
-                    onClick={() => window.confirm(`¿Eliminar el rol ${rol.nombre}?`) && eliminar.mutate(rol.id)} />
+                  <IconButton icon="eliminar" title="Eliminar" danger onClick={() => eliminar(rol)} />
                 </div>
               )}
             </div>
@@ -101,7 +102,7 @@ export default function Roles() {
         titulo={modal?.id ? `Editar rol — ${modal.nombre}` : 'Nuevo rol'}
         ancho="max-w-3xl"
       >
-        <form onSubmit={(e) => { e.preventDefault(); guardar.mutate(); }}>
+        <form onSubmit={guardar}>
           <div className="grid gap-4 sm:grid-cols-2 mb-5">
             <Input label="Nombre" value={form.nombre}
               onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} required />
@@ -131,7 +132,7 @@ export default function Roles() {
 
           <div className="flex justify-end gap-2 mt-6">
             <Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancelar</Button>
-            <Button type="submit" icon="confirmar" loading={guardar.isPending}>Guardar</Button>
+            <Button type="submit" icon="confirmar" loading={guardando}>Guardar</Button>
           </div>
         </form>
       </Modal>

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { toast } from 'sonner';
-import { api, errorMsg } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { errorMsg, erroresPorCampo } from '../services/api';
+import { useFetch } from '../hooks/useFetch';
+import { useAuth } from '../context/AuthContext';
 import {
   Button, IconButton, Card, PageHeader, Modal, Table, Buscador,
   Input, Select, Textarea, Checkbox, Spinner, Paginacion,
@@ -45,64 +45,37 @@ function Campo({ def, valor, onChange, error }) {
  * Página CRUD genérica: lista + búsqueda + modal crear/editar + eliminar.
  *
  * props:
- *  - titulo, descripcion, endpoint (p.ej. '/pacientes')
+ *  - titulo, descripcion
+ *  - service: { listar(params), crear(payload), actualizar(id, payload), eliminar(id) }
  *  - columnas: [{key,label,render?}]
  *  - campos: definiciones del formulario
  *  - permisoBase: 'pacientes' → usa pacientes.crear/editar/eliminar
- *  - paginado: true si el endpoint devuelve {data,total,page,pages}
+ *  - paginado: true si listar() devuelve {data,total,page,pages}
  *  - transformar: (form) => payload antes de enviar
  */
 export default function CrudPage({
-  titulo, descripcion, endpoint, columnas, campos,
+  titulo, descripcion, service, columnas, campos,
   permisoBase, paginado = false, transformar = (f) => f, valoresIniciales = {},
 }) {
   const { can } = useAuth();
-  const qc = useQueryClient();
   const [busqueda, setBusqueda] = useState('');
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(null); // null | {} (nuevo) | fila (editar)
   const [form, setForm] = useState({});
   const [errores, setErrores] = useState({});
+  const [guardando, setGuardando] = useState(false);
 
-  const params = useMemo(() => {
-    const p = {};
-    if (busqueda) p.q = busqueda;
-    if (paginado) { p.page = page; p.limit = 15; }
-    return p;
-  }, [busqueda, page, paginado]);
-
-  const { data, isLoading } = useQuery({
-    queryKey: [endpoint, params],
-    queryFn: () => api.get(endpoint, { params }).then((r) => r.data),
-  });
+  const { data, cargando, recargar } = useFetch(
+    () => {
+      const params = {};
+      if (busqueda) params.q = busqueda;
+      if (paginado) { params.page = page; params.limit = 15; }
+      return service.listar(params);
+    },
+    [busqueda, page],
+  );
 
   const filas = paginado ? (data?.data ?? []) : (data ?? []);
-
-  const invalidar = () => qc.invalidateQueries({ queryKey: [endpoint] });
-
-  const guardar = useMutation({
-    mutationFn: (payload) => modal?.id
-      ? api.put(`${endpoint}/${modal.id}`, payload)
-      : api.post(endpoint, payload),
-    onSuccess: () => {
-      toast.success(modal?.id ? 'Registro actualizado' : 'Registro creado');
-      setModal(null);
-      invalidar();
-    },
-    onError: (err) => {
-      const detalles = err.response?.data?.details;
-      if (detalles?.length) {
-        setErrores(Object.fromEntries(detalles.map((d) => [d.campo, d.mensaje])));
-      }
-      toast.error(errorMsg(err));
-    },
-  });
-
-  const eliminar = useMutation({
-    mutationFn: (id) => api.delete(`${endpoint}/${id}`),
-    onSuccess: () => { toast.success('Registro eliminado'); invalidar(); },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
 
   const abrirModal = (fila) => {
     setErrores({});
@@ -110,12 +83,37 @@ export default function CrudPage({
     setModal(fila ?? {});
   };
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     setErrores({});
+    setGuardando(true);
+
     const payload = {};
     for (const def of campos) payload[def.name] = form[def.name] ?? null;
-    guardar.mutate(transformar(payload));
+
+    try {
+      if (modal?.id) await service.actualizar(modal.id, transformar(payload));
+      else await service.crear(transformar(payload));
+      toast.success(modal?.id ? 'Registro actualizado' : 'Registro creado');
+      setModal(null);
+      recargar();
+    } catch (err) {
+      setErrores(erroresPorCampo(err));
+      toast.error(errorMsg(err));
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const eliminar = async (id) => {
+    if (!window.confirm('¿Eliminar este registro?')) return;
+    try {
+      await service.eliminar(id);
+      toast.success('Registro eliminado');
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    }
   };
 
   return (
@@ -131,7 +129,7 @@ export default function CrudPage({
           <Buscador valor={busqueda} onBuscar={(v) => { setBusqueda(v); setPage(1); }} />
         </div>
 
-        {isLoading ? <Spinner /> : (
+        {cargando ? <Spinner /> : (
           <Table
             columnas={columnas}
             filas={filas}
@@ -141,10 +139,7 @@ export default function CrudPage({
                   <IconButton icon="editar" title="Editar" onClick={() => abrirModal(fila)} />
                 )}
                 {can(`${permisoBase}.eliminar`) && (
-                  <IconButton
-                    icon="eliminar" title="Eliminar" danger
-                    onClick={() => window.confirm('¿Eliminar este registro?') && eliminar.mutate(fila.id)}
-                  />
+                  <IconButton icon="eliminar" title="Eliminar" danger onClick={() => eliminar(fila.id)} />
                 )}
               </>
             )}
@@ -176,7 +171,7 @@ export default function CrudPage({
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancelar</Button>
-            <Button type="submit" icon="confirmar" loading={guardar.isPending}>Guardar</Button>
+            <Button type="submit" icon="confirmar" loading={guardando}>Guardar</Button>
           </div>
         </form>
       </Modal>

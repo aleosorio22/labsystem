@@ -1,19 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import CrudPage from '../components/CrudPage';
 import { Badge } from '../components/ui';
+import { useFetch } from '../hooks/useFetch';
+import rolService from '../services/rolService';
+import userService from '../services/userService';
+
+const service = {
+  listar: () => userService.getAll(),
+  crear: (payload) => userService.create(payload),
+  actualizar: (id, payload) => userService.update(id, payload),
+  eliminar: (id) => userService.desactivar(id),
+};
 
 export default function Usuarios() {
-  const { data: roles } = useQuery({
-    queryKey: ['/roles'],
-    queryFn: () => api.get('/roles').then((r) => r.data),
-  });
+  const { data: roles } = useFetch(() => rolService.getAll(), []);
 
   return (
     <CrudPage
       titulo="Usuarios"
       descripcion="Cuentas de acceso al sistema"
-      endpoint="/usuarios"
+      service={service}
       permisoBase="usuarios"
       columnas={[
         { key: 'name', label: 'Nombre' },

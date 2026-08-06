@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { api, errorMsg, abrirPdf } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import {
   Button, IconButton, Card, PageHeader, Table, Buscador, Spinner,
-  Paginacion, Badge, Modal, Input,
+  Paginacion, Modal, Input,
 } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useFetch } from '../hooks/useFetch';
+import { errorMsg } from '../services/api';
+import ordenService from '../services/ordenService';
 
 const fmtQ = (n) => `Q ${Number(n).toFixed(2)}`;
 const fmtFecha = (d) => new Date(d).toLocaleDateString('es-GT');
@@ -18,44 +19,58 @@ const fmtFecha = (d) => new Date(d).toLocaleDateString('es-GT');
  */
 export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
   const { can } = useAuth();
-  const qc = useQueryClient();
   const navigate = useNavigate();
   const [busqueda, setBusqueda] = useState('');
   const [page, setPage] = useState(1);
   const [anular, setAnular] = useState(null); // orden a anular
   const [passwordAnular, setPasswordAnular] = useState('');
+  const [anulando, setAnulando] = useState(false);
 
-  const params = { estado_documento: estadoDocumento, page, limit: 15, q: busqueda || undefined };
-  const { data, isLoading } = useQuery({
-    queryKey: ['ordenes', params],
-    queryFn: () => api.get('/ordenes', { params }).then((r) => r.data),
-  });
+  const { data, cargando, recargar } = useFetch(
+    () => ordenService.getAll({
+      estado_documento: estadoDocumento,
+      page,
+      limit: 15,
+      q: busqueda || undefined,
+    }),
+    [estadoDocumento, page, busqueda],
+  );
 
-  const invalidar = () => qc.invalidateQueries({ queryKey: ['ordenes'] });
+  const transicion = async (fn, id, msg) => {
+    try {
+      await fn(id);
+      toast.success(msg);
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    }
+  };
 
-  const transicion = useMutation({
-    mutationFn: ({ id, ruta }) => api.post(`/ordenes/${id}/${ruta}`),
-    onSuccess: (_d, { msg }) => { toast.success(msg); invalidar(); },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
-
-  const anularMut = useMutation({
-    mutationFn: ({ id, password }) => api.post(`/ordenes/${id}/anular`, { password_actual: password }),
-    onSuccess: () => {
+  const confirmarAnular = async (e) => {
+    e.preventDefault();
+    setAnulando(true);
+    try {
+      await ordenService.anular(anular.id, passwordAnular);
       toast.success('Orden anulada');
-      setAnular(null); setPasswordAnular('');
-      invalidar();
-    },
-    onError: (err) => toast.error(errorMsg(err)),
-  });
+      setAnular(null);
+      setPasswordAnular('');
+      recargar();
+    } catch (err) {
+      toast.error(errorMsg(err));
+    } finally {
+      setAnulando(false);
+    }
+  };
 
   const whatsapp = async (id) => {
     try {
-      const { data: w } = await api.get(`/ordenes/${id}/whatsapp`);
+      const w = await ordenService.getWhatsapp(id);
       const numero = (w.celular || '').replace(/\D/g, '');
       if (!numero) return toast.warning('El paciente no tiene celular registrado');
       window.open(`https://wa.me/502${numero}?text=${encodeURIComponent(w.mensaje)}`, '_blank');
-    } catch (err) { toast.error(errorMsg(err)); }
+    } catch (err) {
+      toast.error(errorMsg(err));
+    }
   };
 
   return (
@@ -75,7 +90,7 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
           />
         </div>
 
-        {isLoading ? <Spinner /> : (
+        {cargando ? <Spinner /> : (
           <Table
             columnas={[
               { key: 'id', label: 'No.', className: 'text-text-faint' },
@@ -90,14 +105,14 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
                 {estadoDocumento === 1 && (
                   <>
                     <IconButton icon="documento" title="PDF de cotización"
-                      onClick={() => abrirPdf(`/ordenes/${o.id}/pdf/cotizacion`)} />
+                      onClick={() => ordenService.abrirPdfCotizacion(o.id)} />
                     {can('ordenes.editar') && (
                       <IconButton icon="editar" title="Editar"
                         onClick={() => navigate(`/ordenes/${o.id}/editar`)} />
                     )}
                     {can('ordenes.convertir') && (
                       <IconButton icon="avanzar" title="Pasar a análisis"
-                        onClick={() => transicion.mutate({ id: o.id, ruta: 'convertir-venta', msg: 'Orden pasada a análisis' })} />
+                        onClick={() => transicion(ordenService.convertirAVenta, o.id, 'Orden pasada a análisis')} />
                     )}
                   </>
                 )}
@@ -110,7 +125,7 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
                     )}
                     {can('ordenes.convertir') && (
                       <IconButton icon="regresar" title="Regresar a cotización"
-                        onClick={() => transicion.mutate({ id: o.id, ruta: 'regresar-cotizacion', msg: 'Orden regresada a cotización' })} />
+                        onClick={() => transicion(ordenService.regresarACotizacion, o.id, 'Orden regresada a cotización')} />
                     )}
                   </>
                 )}
@@ -119,14 +134,14 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
                     {can('resultados.imprimir') && (
                       <>
                         <IconButton icon="imprimir" title="PDF de resultados"
-                          onClick={() => abrirPdf(`/ordenes/${o.id}/pdf/resultados`)} />
+                          onClick={() => ordenService.abrirPdfResultados(o.id)} />
                         <IconButton icon="whatsapp" title="Avisar por WhatsApp"
                           onClick={() => whatsapp(o.id)} />
                       </>
                     )}
                     {can('resultados.reabrir') && (
                       <IconButton icon="reabrir" title="Reabrir análisis"
-                        onClick={() => transicion.mutate({ id: o.id, ruta: 'reabrir', msg: 'Análisis reabierto' })} />
+                        onClick={() => transicion(ordenService.reabrir, o.id, 'Análisis reabierto')} />
                     )}
                   </>
                 )}
@@ -149,7 +164,7 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
           Por seguridad, confirma tu contraseña para anular la orden de
           <span className="font-medium text-text"> {anular?.paciente}</span>.
         </p>
-        <form onSubmit={(e) => { e.preventDefault(); anularMut.mutate({ id: anular.id, password: passwordAnular }); }}>
+        <form onSubmit={confirmarAnular}>
           <Input
             label="Tu contraseña"
             type="password"
@@ -159,7 +174,7 @@ export default function Ordenes({ estadoDocumento, titulo, descripcion }) {
           />
           <div className="flex justify-end gap-2 mt-5">
             <Button type="button" variant="secondary" onClick={() => setAnular(null)}>Cancelar</Button>
-            <Button type="submit" variant="danger" icon="eliminar" loading={anularMut.isPending}>
+            <Button type="submit" variant="danger" icon="eliminar" loading={anulando}>
               Anular orden
             </Button>
           </div>

@@ -1,28 +1,35 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { api } from '../lib/api';
 import CrudPage from '../components/CrudPage';
+import { useFetch } from '../hooks/useFetch';
+import catalogoService from '../services/catalogoService';
 
 const TABS = [
-  { id: 'sexos', label: 'Sexos', endpoint: '/catalogos/sexos' },
-  { id: 'unidades', label: 'Unidades de medida', endpoint: '/catalogos/unidades-medida' },
-  { id: 'cat-examen', label: 'Categorías de examen', endpoint: '/catalogos/categorias-examen', conOrden: true },
-  { id: 'palabras', label: 'Palabras cualitativas', endpoint: '/catalogos/palabras-cualitativo' },
-  { id: 'cat-heces', label: 'Categorías de heces', endpoint: '/catalogos/categorias-heces', conOrden: true },
-  { id: 'par-heces', label: 'Parámetros de heces', endpoint: '/catalogos/parametros-heces', padre: { endpoint: '/catalogos/categorias-heces', campo: 'categoria_heces_id' } },
-  { id: 'cat-orina', label: 'Categorías de orina', endpoint: '/catalogos/categorias-orina', conOrden: true },
-  { id: 'par-orina', label: 'Parámetros de orina', endpoint: '/catalogos/parametros-orina', padre: { endpoint: '/catalogos/categorias-orina', campo: 'categoria_orina_id' } },
+  { id: 'sexos', label: 'Sexos' },
+  { id: 'unidades-medida', label: 'Unidades de medida' },
+  { id: 'categorias-examen', label: 'Categorías de examen', conOrden: true },
+  { id: 'palabras-cualitativo', label: 'Palabras cualitativas' },
+  { id: 'categorias-heces', label: 'Categorías de heces', conOrden: true },
+  { id: 'parametros-heces', label: 'Parámetros de heces', padre: { catalogo: 'categorias-heces', campo: 'categoria_heces_id' } },
+  { id: 'categorias-orina', label: 'Categorías de orina', conOrden: true },
+  { id: 'parametros-orina', label: 'Parámetros de orina', padre: { catalogo: 'categorias-orina', campo: 'categoria_orina_id' } },
 ];
 
 export default function Catalogos() {
   const [tab, setTab] = useState(TABS[0]);
 
-  const { data: padres } = useQuery({
-    queryKey: [tab.padre?.endpoint ?? 'sin-padre'],
-    queryFn: () => api.get(tab.padre.endpoint).then((r) => r.data),
-    enabled: !!tab.padre,
-  });
+  const { data: padres } = useFetch(
+    () => catalogoService.getAll(tab.padre.catalogo),
+    [tab.id],
+    { activo: !!tab.padre },
+  );
+
+  const service = {
+    listar: (params) => catalogoService.getAll(tab.id, params),
+    crear: (payload) => catalogoService.create(tab.id, payload),
+    actualizar: (id, payload) => catalogoService.update(tab.id, id, payload),
+    eliminar: (id) => catalogoService.eliminar(tab.id, id),
+  };
 
   const columnas = [
     { key: 'id', label: 'No.', className: 'text-text-faint' },
@@ -67,7 +74,7 @@ export default function Catalogos() {
       <CrudPage
         key={tab.id}
         titulo={tab.label}
-        endpoint={tab.endpoint}
+        service={service}
         permisoBase="catalogos"
         columnas={columnas}
         campos={campos}

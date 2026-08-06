@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { icons } from '../config/icons';
 import { NAV_SECTIONS } from '../config/nav';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../context/AuthContext';
 
 function ItemNav({ to, label, icon }) {
   const Icon = icons[icon];
