@@ -1,0 +1,12 @@
+# Reglas de Netlify. Se evalúan de arriba hacia abajo: gana la primera que coincida,
+# por eso /api/* va antes que /*.
+# Vite copia este archivo a dist/ en cada build.
+
+# Todo lo que empiece con /api se reenvía al backend (código 200 = proxy, no
+# redirección). Para el navegador la petición es del mismo dominio, así que no
+# hay CORS de por medio.
+/api/*  https://pink-horse-829342.hostingersite.com/api/:splat  200
+
+# React Router maneja las rutas del lado del cliente (/pacientes, /ordenes/nueva…).
+# Cualquier ruta que no sea un archivo real se sirve con index.html.
+/*  /index.html  200
