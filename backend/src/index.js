@@ -20,6 +20,12 @@ const bitacoraRoutes = require('./modules/sistema/routes/bitacoraRoutes');
 
 const app = express();
 
+// En hosting (Hostinger, nginx, etc.) la app corre detrás de un proxy que
+// manda la IP real en X-Forwarded-For. Sin esto, express-rate-limit ve la IP
+// del proxy para todos y un solo usuario podría agotar el límite de intentos
+// de login de todo el mundo. Se confía solo en el primer salto.
+if (config.env === 'production') app.set('trust proxy', 1);
+
 // Middlewares
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigin }));
